@@ -69,8 +69,10 @@ before serving the Worker. Never put credentials in source control.
 ## Identity and administrator access
 
 The employee portal is at `/employee` (also `/`). It requires only a name and issue
-in the ticket form. Sites supplies signed-in identity to keep each employee's tickets
-private. The admin portal is at `/admin`, with an additional username/password sign-in.
+in the ticket form. Sites identity keeps employee tickets private when available. Otherwise a secure,
+HTTP-only browser cookie identifies the employee without an extra sign-in. In this
+browser-only mode, use the same browser to track tickets; clearing cookies loses
+access to those tickets. The admin portal is at `/admin`, with an additional username/password sign-in.
 No visitor becomes an administrator automatically.
 
 Configure these server-side secrets in the hosting platform:
@@ -84,16 +86,15 @@ password, its hash, or live session cookies. Tests use separate fictional creden
 
 On successful login, the configured salted hash is synchronized to `admin_accounts`.
 The server issues an eight-hour `HttpOnly`, `Secure`, `SameSite=Strict` cookie. Only
-its SHA-256 hash is stored in `admin_sessions`. Sessions are bound to the signed-in
-Sites visitor and credential version, and are revoked by sign-out or password-hash
-rotation. Five failed login attempts cause a 15-minute cooldown per signed-in visitor.
+its SHA-256 hash is stored in `admin_sessions`. Sessions are bound to the signed-in Sites visitor or browser identity and credential version, and are revoked by sign-out or password-hash
+rotation. Five failed login attempts cause a 15-minute cooldown per signed-in visitor, or per source IP when no platform identity is supplied.
 
 Employee API routes always return only that employee's tickets, even when an admin
 cookie is present. Admin API routes require a valid admin session. Assignment is a
 text field and does not grant administrator privileges. There is one configured
 administrator account and no role-management screen.
 
-Sites' authentication boundary must provide `oai-authenticated-user-id`. Keep the site
+Sites' authentication boundary may provide `oai-authenticated-user-id`; admin password sign-in works without it. Keep the site
 private and manage employee access in the platform's access settings. If hosting
 outside Sites, use a trusted authentication gateway that strips visitor-supplied
 identity headers and injects verified identity. Do not expose the Worker directly

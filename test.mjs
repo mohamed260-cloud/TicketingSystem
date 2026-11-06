@@ -24,7 +24,7 @@ test('employee and admin pages exist with distinct portals and dark styling',asy
  assert.equal((await call('/missing')).status,404);
 });
 test('no visitor becomes admin automatically and employee isolation holds',async()=>{
- const {call}=fixture();assert.equal((await call('/api/tickets',{user:null})).status,401);
+ const {call}=fixture();assert.equal((await call('/api/tickets',{user:null})).status,200);
  assert.equal((await call('/api/session')).data.admin,false);
  assert.equal((await call('/api/admin/tickets')).status,401);
  assert.equal((await call('/api/tickets',{method:'POST',body:{name:' ',issue:'x'}})).status,400);
@@ -64,4 +64,24 @@ test('five failed attempts trigger a database-backed cooldown',async()=>{
 test('cross-origin writes fail and credential rotation invalidates sessions',async()=>{
  const {call,login,env}=fixture();assert.equal((await call('/api/tickets',{method:'POST',origin:'https://other.test',body:{name:'Alex',issue:'x'}})).status,403);
  const cookie=await login();env.ADMIN_PASSWORD_HASH='new-salt:changed';assert.equal((await call('/api/admin/tickets',{user:'administrator',cookie})).status,401);
+});
+
+test('password login works without platform headers and retains the admin session',async()=>{
+ const {call}=fixture();
+ const initial=await call('/api/session',{user:null});assert.equal(initial.status,200);assert.equal(initial.data.admin,false);
+ const browser=initial.cookie.split(';')[0];assert.match(browser,/__Host-helpdesk-browser=/);
+ const login=await call('/api/admin/login',{user:null,cookie:browser,method:'POST',body:{username:'Test administrator',password}});assert.equal(login.status,200);
+ const cookies=browser+'; '+login.cookie.split(';')[0];
+ assert.equal((await call('/api/session',{user:null,cookie:cookies})).data.admin,true);
+ assert.equal((await call('/api/admin/tickets',{user:null,cookie:cookies})).status,200);
+ assert.equal((await call('/api/admin/tickets',{user:null,cookie:browser})).status,401);
+ const ticket=await call('/api/tickets',{user:null,cookie:browser,method:'POST',body:{name:'Alex',issue:'Browser-only issue'}});assert.equal(ticket.status,201);
+ assert.equal((await call('/api/tickets',{user:null,cookie:browser})).data.length,1);
+ assert.equal((await call('/api/tickets',{user:null})).data.length,0);
+ const logout=await call('/api/admin/logout',{user:null,cookie:cookies,method:'POST',body:{}});assert.equal(logout.status,200);
+ assert.equal((await call('/api/admin/tickets',{user:null,cookie:cookies})).status,401);
+});
+test('clearing browser cookies cannot reset the unauthenticated login cooldown',async()=>{
+ const {call}=fixture();for(let i=0;i<5;i++)assert.equal((await call('/api/admin/login',{user:null,method:'POST',body:{username:'Test administrator',password:'wrong'}})).status,401);
+ assert.equal((await call('/api/admin/login',{user:null,method:'POST',body:{username:'Test administrator',password}})).status,429);
 });
