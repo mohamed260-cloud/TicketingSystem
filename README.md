@@ -53,6 +53,10 @@ Employee page: http://127.0.0.1:8787/employee
 
 Admin page: http://127.0.0.1:8787/admin
 
+`npm run dev` now applies pending database migrations before starting, so a missing
+admin table cannot silently reach the sign-in screen. Local server failures display
+their diagnostic details on loopback addresses only.
+
 Restart `npm run dev` after changing `.dev.vars`. Run `npm run setup:local` again to
 configure a different local password. Local and production ticket databases are
 separate. The Wrangler configuration is for local development; deploy the hosted

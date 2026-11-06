@@ -7,7 +7,9 @@
     "test": "node --test test.mjs",
     "dev": "wrangler dev --local --port 8787",
     "setup:local": "node scripts/setup-local.mjs",
-    "db:migrate:local": "wrangler d1 migrations apply DB --local"
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "predev": "node scripts/prepare-local.mjs",
+    "test:runtime": "node runtime-test.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.158.0"

@@ -99,7 +99,18 @@ const b=await req.json();if(!['Open','In progress','Waiting','Resolved'].include
 await env.DB.prepare('UPDATE tickets SET status=?,priority=?,assignee=?,updated=? WHERE id=?').bind(b.status,b.priority,String(b.assignee||'').trim(),new Date().toISOString(),t.id).run();return json({ok:true});}
 }
 return json({error:'Not found.'},404);
-}catch(e){if(e instanceof SyntaxError)return json({error:'Invalid request.'},400);console.error(e);return json({error:'We could not complete that request. Please try again.'},500);}
+}catch(e){
+if(e instanceof SyntaxError)return json({error:'Invalid request.'},400);
+console.error('[HELPDESK_REQUEST_FAILED]',e);
+const loopback=['127.0.0.1','localhost','[::1]'].includes(url.hostname);
+if(loopback){
+let detail=String(e?.message||e).slice(0,700);
+for(const value of [env.ADMIN_PASSWORD_HASH,env.ADMIN_USERNAME])if(value)detail=detail.replaceAll(value,'[redacted]');
+if(/no such table|no such column/i.test(detail))return json({error:'Local database schema is incomplete. Stop the server and run npm run dev to apply migrations. Details: '+detail},503);
+return json({error:'Local server error: '+detail},500);
+}
+return json({error:'We could not complete that request. Please try again.'},500);
+}
 }
 const PAGE=String.raw`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Helpdesk · Employee support</title><meta name="description" content="A little less friction. A lot more support. Submit and track employee support tickets."><style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap');
