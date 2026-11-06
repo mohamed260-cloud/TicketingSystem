@@ -16,7 +16,7 @@ const cookie=(token,age=28800)=>'__Host-helpdesk-admin='+token+'; Path=/; HttpOn
 async function adminSession(req,env,user){
 const token=req.headers.get('cookie')?.match(/(?:^|;\s*)__Host-helpdesk-admin=([a-f0-9]{64})(?:;|$)/)?.[1];
 if(!token)return null;
-return await env.DB.prepare('SELECT a.username FROM admin_sessions s JOIN admin_accounts a ON a.username=s.username WHERE s.token_hash=? AND s.user_id=? AND s.expires>? AND s.credential_version=? AND a.password_hash=?').bind(await sha(token),user,Date.now(),env.ADMIN_PASSWORD_HASH||'',env.ADMIN_PASSWORD_HASH||'').first();
+return await env.DB.prepare('SELECT a.username FROM admin_sessions s JOIN admin_accounts a ON a.username=s.username WHERE s.token_hash=? AND s.user_id=? AND s.expires>? AND s.credential_version=a.password_hash').bind(await sha(token),user,Date.now()).first();
 }
 export default {async fetch(req,env){
 const platformUser=req.headers.get('oai-authenticated-user-id');
@@ -40,7 +40,9 @@ if(req.method!=='GET'&&req.headers.get('origin')!==url.origin)return json({error
 if(!env.DB)return json({error:'Ticket storage is not connected.'},503);
 if(req.method!=='GET'&&Number(req.headers.get('content-length'))>16000)return json({error:'Request too large.'},413);
 if(url.pathname==='/api/admin/login'&&req.method==='POST'){
-if(!env.ADMIN_USERNAME||!env.ADMIN_PASSWORD_HASH)return json({error:'Administrator sign-in is not configured.'},503);
+if(env.ADMIN_USERNAME&&env.ADMIN_PASSWORD_HASH){
+await env.DB.prepare('INSERT INTO admin_accounts (username,password_hash) VALUES (?,?) ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash').bind(env.ADMIN_USERNAME,env.ADMIN_PASSWORD_HASH).run();
+}
 const now=Date.now();
 const loginKey=req.headers.get('oai-authenticated-user-id')||'ip:'+await sha(req.headers.get('cf-connecting-ip')||'private-site');
 await env.DB.prepare('INSERT OR IGNORE INTO login_attempts (user_id,attempts,window_start) VALUES (?,0,?)').bind(loginKey,now).run();
@@ -50,16 +52,18 @@ if(attempt.attempts>=5)return json({error:'Too many attempts. Please try again i
 await env.DB.prepare('UPDATE login_attempts SET attempts=attempts+1 WHERE user_id=?').bind(loginKey).run();
 const b=await req.json();const username=String(b.username||'').trim();const password=String(b.password||'');
 if(username.length>100||password.length>256)return json({error:'Incorrect username or password.'},401);
-const passwordValid=await verify(password,env.ADMIN_PASSWORD_HASH);
-if(!passwordValid||username.toLowerCase()!==env.ADMIN_USERNAME.toLowerCase())return json({error:'Incorrect username or password.'},401);
-await env.DB.prepare('INSERT INTO admin_accounts (username,password_hash) VALUES (?,?) ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash').bind(env.ADMIN_USERNAME,env.ADMIN_PASSWORD_HASH).run();
+const account=await env.DB.prepare('SELECT username,password_hash FROM admin_accounts WHERE username=? COLLATE NOCASE').bind(username).first();
+const hash=account?.password_hash||env.ADMIN_PASSWORD_HASH||(await env.DB.prepare('SELECT password_hash FROM admin_accounts LIMIT 1').first())?.password_hash;
+if(!hash)return json({error:'The administrator account has not been provisioned for this deployment.'},503);
+const passwordValid=await verify(password,hash);
+if(!passwordValid||!account)return json({error:'Incorrect username or password.'},401);
 const token=hex(crypto.getRandomValues(new Uint8Array(32)));
 await env.DB.batch([
 env.DB.prepare('DELETE FROM admin_sessions WHERE expires<? OR user_id=?').bind(now,user),
-env.DB.prepare('INSERT INTO admin_sessions (token_hash,username,user_id,expires,credential_version) VALUES (?,?,?,?,?)').bind(await sha(token),env.ADMIN_USERNAME,user,now+28800000,env.ADMIN_PASSWORD_HASH),
+env.DB.prepare('INSERT INTO admin_sessions (token_hash,username,user_id,expires,credential_version) VALUES (?,?,?,?,?)').bind(await sha(token),account.username,user,now+28800000,account.password_hash),
 env.DB.prepare('DELETE FROM login_attempts WHERE user_id=?').bind(loginKey)
 ]);
-return json({ok:true,username:env.ADMIN_USERNAME},200,{'Set-Cookie':cookie(token)});
+return json({ok:true,username:account.username},200,{'Set-Cookie':cookie(token)});
 }
 if(url.pathname==='/api/admin/logout'&&req.method==='POST'){
 const token=req.headers.get('cookie')?.match(/(?:^|;\s*)__Host-helpdesk-admin=([a-f0-9]{64})(?:;|$)/)?.[1];

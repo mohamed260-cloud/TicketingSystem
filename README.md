@@ -84,7 +84,9 @@ Configure these server-side secrets in the hosting platform:
 The deployment's configured credentials are not in this repository. Never commit the
 password, its hash, or live session cookies. Tests use separate fictional credentials.
 
-On successful login, the configured salted hash is synchronized to `admin_accounts`.
+Runtime secrets provision the administrator hash into `admin_accounts` when available.
+Subsequent logins verify the database account directly, so a provisioned deployment
+does not depend on secrets being injected into every request.
 The server issues an eight-hour `HttpOnly`, `Secure`, `SameSite=Strict` cookie. Only
 its SHA-256 hash is stored in `admin_sessions`. Sessions are bound to the signed-in Sites visitor or browser identity and credential version, and are revoked by sign-out or password-hash
 rotation. Five failed login attempts cause a 15-minute cooldown per signed-in visitor, or per source IP when no platform identity is supplied.

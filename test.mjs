@@ -63,7 +63,7 @@ test('five failed attempts trigger a database-backed cooldown',async()=>{
 });
 test('cross-origin writes fail and credential rotation invalidates sessions',async()=>{
  const {call,login,env}=fixture();assert.equal((await call('/api/tickets',{method:'POST',origin:'https://other.test',body:{name:'Alex',issue:'x'}})).status,403);
- const cookie=await login();env.ADMIN_PASSWORD_HASH='new-salt:changed';assert.equal((await call('/api/admin/tickets',{user:'administrator',cookie})).status,401);
+ const cookie=await login();env.ADMIN_PASSWORD_HASH='new-salt:changed';await call('/api/admin/login',{user:'rotator',method:'POST',body:{username:'Test administrator',password:'wrong'}});assert.equal((await call('/api/admin/tickets',{user:'administrator',cookie})).status,401);
 });
 
 test('password login works without platform headers and retains the admin session',async()=>{
@@ -84,4 +84,11 @@ test('password login works without platform headers and retains the admin sessio
 test('clearing browser cookies cannot reset the unauthenticated login cooldown',async()=>{
  const {call}=fixture();for(let i=0;i<5;i++)assert.equal((await call('/api/admin/login',{user:null,method:'POST',body:{username:'Test administrator',password:'wrong'}})).status,401);
  assert.equal((await call('/api/admin/login',{user:null,method:'POST',body:{username:'Test administrator',password}})).status,429);
+});
+
+test('provisioned database account works even when runtime secrets are not injected',async()=>{
+ const {call,login,env}=fixture();const initial=await login();delete env.ADMIN_USERNAME;delete env.ADMIN_PASSWORD_HASH;
+ assert.equal((await call('/api/admin/tickets',{user:'administrator',cookie:initial})).status,200);
+ const cookie=await login('second-admin-browser');
+ assert.equal((await call('/api/admin/tickets',{user:'second-admin-browser',cookie})).status,200);
 });
