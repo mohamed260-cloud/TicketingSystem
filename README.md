@@ -33,18 +33,40 @@ The deployed app is private. Repository visibility does not grant access to the 
 | `test.mjs` | Ticket lifecycle, authorization, and browser script syntax checks |
 | `.github/workflows/checks.yml` | Automated tests and build |
 
-## Requirements and checks
+## Run locally (127.0.0.1:8787)
 
-Use Node.js 24 or newer. There are no npm dependencies to install.
+Use Node.js 24 or newer. Production secrets and production D1 data are not copied to
+your computer. Complete this setup before trying to sign in locally:
+
+```sh
+npm install
+npm run setup:local
+npm run dev
+```
+
+At the setup prompts, accept `Mohamed ashraf` as the username and enter your chosen
+admin password. Password input is hidden. To use the same password as the hosted app,
+enter that password here. Setup applies the database migrations and writes a salted
+hash to the ignored `.dev.vars` file. No password is committed to GitHub.
+
+Employee page: http://127.0.0.1:8787/employee
+
+Admin page: http://127.0.0.1:8787/admin
+
+Restart `npm run dev` after changing `.dev.vars`. Run `npm run setup:local` again to
+configure a different local password. Local and production ticket databases are
+separate. The Wrangler configuration is for local development; deploy the hosted
+Sites app through Sites rather than running `wrangler deploy` with local settings.
+
+## Checks
 
 ```sh
 npm test
 npm run build
 ```
 
-Tests use an in-memory SQLite database and exercise authentication, ticket creation,
-employee isolation, administrator updates, and replies. They also compile the browser
-script. They do not cover browser layout or a hosted end-to-end session.
+Tests use an in-memory SQLite database and cover ticket privacy, administrator login,
+session revocation, password rotation, login cooldowns, and browser script syntax.
 
 ## Hosting
 

@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "employee-helpdesk",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-11-06",
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "helpdesk-local",
+    "database_id": "helpdesk-local",
+    "migrations_dir": "drizzle"
+  }]
+}
