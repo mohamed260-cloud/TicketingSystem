@@ -2,7 +2,9 @@
 
 An employee support system with a two-field ticket form: **name** and **issue**.
 
-Live app: https://helpdesk-simple-employee-support.windycrust.chatgpt.site
+Employee page: https://helpdesk-simple-employee-support.windycrust.chatgpt.site/employee
+
+Admin page: https://helpdesk-simple-employee-support.windycrust.chatgpt.site/admin
 
 The deployed app is private. Repository visibility does not grant access to the app.
 
@@ -10,7 +12,9 @@ The deployed app is private. Repository visibility does not grant access to the 
 
 - Submit tickets and receive a unique reference.
 - Employees see their own tickets and conversations.
-- Support administrator sees all tickets in the team inbox.
+- Separate password-protected admin page with a shared ticket inbox.
+- Comfortable dark blue theme throughout both portals.
+- Database-backed admin sessions, sign-out, and login cooldowns.
 - Set status, priority, and assignee; search and filter tickets.
 - Exchange replies and export tickets to CSV.
 - Persistent shared storage with Cloudflare D1.
@@ -21,7 +25,8 @@ The deployed app is private. Repository visibility does not grant access to the 
 | Path | Purpose |
 | --- | --- |
 | `worker/index.js` | Worker API and embedded HTML, CSS, and browser JavaScript |
-| `drizzle/0000_helpdesk.sql` | Database schema migration |
+| `drizzle/0000_helpdesk.sql` | Tickets and conversation schema |
+| `drizzle/0001_admin_access.sql` | Admin accounts, sessions, and login attempt schema |
 | `drizzle/meta/_journal.json` | Migration journal |
 | `.openai/hosting.json` | Existing Sites project and D1 binding declaration |
 | `build.mjs` | Creates deployable files in `dist/` |
@@ -63,20 +68,44 @@ before serving the Worker. Never put credentials in source control.
 
 ## Identity and administrator access
 
-The API trusts identity supplied by the Sites authentication boundary through
-`oai-authenticated-user-id` and optional display headers. Keep the site private and
-use the platform's access settings to admit employees. Employees do not type account
-information into the ticket form, but platform sign-in is required to identify them.
+The employee portal is at `/employee` (also `/`). It requires only a name and issue
+in the ticket form. Sites supplies signed-in identity to keep each employee's tickets
+private. The admin portal is at `/admin`, with an additional username/password sign-in.
+No visitor becomes an administrator automatically.
 
-On a fresh database, the first authenticated visitor becomes the support administrator.
-The owner should open the private app before granting employee access. That role is
-stored in the `settings` table. Other visitors can create tickets and access only their
-own records. Assignment is a text field; it does not grant administrator privileges.
-There is currently one administrator account and no role-management screen.
+Configure these server-side secrets in the hosting platform:
 
-If deploying outside Sites, provide a trusted authentication gateway that strips
-visitor-supplied identity headers and injects verified identity. Do not expose the
-Worker directly while trusting arbitrary incoming identity headers.
+- `ADMIN_USERNAME`: administrator username.
+- `ADMIN_PASSWORD_HASH`: `salt:hex-digest` using PBKDF2-HMAC-SHA256, 100,000 iterations,
+  a UTF-8 encoded salt, and a 32-byte derived key. Use a random salt for each password.
+
+The deployment's configured credentials are not in this repository. Never commit the
+password, its hash, or live session cookies. Tests use separate fictional credentials.
+
+On successful login, the configured salted hash is synchronized to `admin_accounts`.
+The server issues an eight-hour `HttpOnly`, `Secure`, `SameSite=Strict` cookie. Only
+its SHA-256 hash is stored in `admin_sessions`. Sessions are bound to the signed-in
+Sites visitor and credential version, and are revoked by sign-out or password-hash
+rotation. Five failed login attempts cause a 15-minute cooldown per signed-in visitor.
+
+Employee API routes always return only that employee's tickets, even when an admin
+cookie is present. Admin API routes require a valid admin session. Assignment is a
+text field and does not grant administrator privileges. There is one configured
+administrator account and no role-management screen.
+
+Sites' authentication boundary must provide `oai-authenticated-user-id`. Keep the site
+private and manage employee access in the platform's access settings. If hosting
+outside Sites, use a trusted authentication gateway that strips visitor-supplied
+identity headers and injects verified identity. Do not expose the Worker directly
+while trusting arbitrary incoming identity headers.
+
+## Database
+
+D1 is bound as `DB`. Apply the SQL migrations in journal order. The first migration
+creates tickets and conversations; the second adds administrator accounts, hashed
+sessions, and login attempt records. Existing ticket records are preserved.
+No schema is created during request handling. The legacy `settings` table remains for
+migration compatibility and no longer grants administrator access.
 
 ## API
 
@@ -85,12 +114,17 @@ same-origin `Origin` header.
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| GET | `/api/session` | Current identity and administrator flag |
-| GET | `/api/tickets` | Own tickets, or all tickets for the administrator |
+| GET | `/api/session` | Current identity and admin-session state |
+| POST | `/api/admin/login` | Sign in with `username` and `password` |
+| POST | `/api/admin/logout` | Revoke the current admin session |
+| GET | `/api/tickets` | Current employee's tickets |
 | POST | `/api/tickets` | Create with `name` and `issue` |
-| GET | `/api/tickets/:id` | Ticket details and conversation |
-| PATCH | `/api/tickets/:id` | Administrator updates `status`, `priority`, `assignee` |
-| POST | `/api/tickets/:id/messages` | Add a reply with `body` |
+| GET | `/api/tickets/:id` | Own ticket details and conversation |
+| POST | `/api/tickets/:id/messages` | Reply to an owned ticket with `body` |
+| GET | `/api/admin/tickets` | All tickets; admin session required |
+| GET | `/api/admin/tickets/:id` | Any ticket's details and conversation |
+| PATCH | `/api/admin/tickets/:id` | Update `status`, `priority`, `assignee` |
+| POST | `/api/admin/tickets/:id/messages` | Support reply with `body` |
 
 Statuses: `Open`, `In progress`, `Waiting`, `Resolved`.
 Priorities: `Low`, `Normal`, `High`, `Urgent`.
